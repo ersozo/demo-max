@@ -1,0 +1,16 @@
+{
+  "name": "demo-rest-api",
+  "version": "1.0.0",
+  "main": "app.js",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch app.js"
+  },
+  "keywords": [],
+  "author": "Ozgur Ersoz",
+  "license": "ISC",
+  "description": "A simple REST API for a demo application",
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
