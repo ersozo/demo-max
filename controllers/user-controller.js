@@ -1,4 +1,5 @@
 import userModel from '../models/user-model.js';
+import { generateJWT } from '../util/auth.js';
 
 // Helper function to validate email format
 const isValidEmail = (email) => {
@@ -44,7 +45,10 @@ const userController = {
       }
 
       // Create new user
-      const newUser = userModel.createUser({ email, password, name });
+      const newUser = await userModel.createUser({ email, password, name });
+      
+      // Generate JWT token
+      const token = generateJWT(newUser);
       
       // Return user without password
       const { password: _, ...userResponse } = newUser;
@@ -52,7 +56,8 @@ const userController = {
       res.status(201).json({
         success: true,
         message: 'User created successfully',
-        user: userResponse
+        user: userResponse,
+        token: token
       });
 
     } catch (error) {
@@ -87,7 +92,7 @@ const userController = {
       }
 
       // Validate credentials
-      const user = userModel.validateCredentials(email, password);
+      const user = await userModel.validateCredentials(email, password);
       
       if (!user) {
         return res.status(401).json({
@@ -96,10 +101,14 @@ const userController = {
         });
       }
 
+      // Generate JWT token
+      const token = generateJWT(user);
+
       res.status(200).json({
         success: true,
         message: 'Login successful',
-        user: user
+        user: user,
+        token: token
       });
 
     } catch (error) {
@@ -129,6 +138,37 @@ const userController = {
 
     } catch (error) {
       console.error('Get users error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error'
+      });
+    }
+  },
+
+  // Get current user profile (protected route)
+  async getCurrentUser(req, res) {
+    try {
+      // req.user comes from the authenticateToken middleware
+      const userId = req.user.id;
+      const user = userModel.findById(userId);
+      
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found'
+        });
+      }
+
+      // Remove password from response
+      const { password: _, ...userWithoutPassword } = user;
+
+      res.status(200).json({
+        success: true,
+        user: userWithoutPassword
+      });
+
+    } catch (error) {
+      console.error('Get current user error:', error);
       res.status(500).json({
         success: false,
         message: 'Internal server error'

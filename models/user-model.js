@@ -1,4 +1,5 @@
 import db from './database.js';
+import bcrypt from 'bcrypt';
 
 // Prepared statements for better performance
 const getAllUsersStmt = db.prepare('SELECT * FROM users');
@@ -50,11 +51,15 @@ const userModel = {
   },
 
   // Create new user
-  createUser(userData) {
+  async createUser(userData) {
     try {
+      // Hash the password before storing
+      const saltRounds = 12;
+      const hashedPassword = await bcrypt.hash(userData.password, saltRounds);
+      
       const result = createUserStmt.run(
         userData.email,
-        userData.password, // In production, this should be hashed
+        hashedPassword,
         userData.name || ''
       );
       
@@ -65,6 +70,28 @@ const userModel = {
       throw error;
     }
   },
+
+  // Verifies user credentials asynchronously
+  async verifyCredentials(email, password) {
+    try {
+      const user = this.findByEmail(email);
+      if (!user) {
+        return null;
+      }
+      const isPasswordValid = await bcrypt.compare(password, user.password);
+      if (isPasswordValid) {
+        // Return user object without password
+        const { password: _, ...userWithoutPassword } = user;
+        return userWithoutPassword;
+      }
+      return null;
+    } catch (error) {
+      console.error('Error verifying credentials:', error);
+      throw error;
+    }
+  },
+
+  
 
   // Update user
   updateUser(id, updateData) {
@@ -98,22 +125,10 @@ const userModel = {
     }
   },
 
-  // Validate user credentials
-  validateCredentials(email, password) {
+  // Validate user credentials using verifyCredentials
+  async validateCredentials(email, password) {
     try {
-      const user = this.findByEmail(email);
-      if (!user) {
-        return null;
-      }
-      
-      // In production, use proper password hashing comparison
-      if (user.password === password) {
-        // Return user without password
-        const { password: _, ...userWithoutPassword } = user;
-        return userWithoutPassword;
-      }
-      
-      return null;
+      return await this.verifyCredentials(email, password);
     } catch (error) {
       console.error('Error validating credentials:', error);
       throw error;
