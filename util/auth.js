@@ -36,7 +36,11 @@ export function verifyJWT(token) {
  */
 export function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+  let token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+
+  // Debug logging
+  console.log('Auth Header:', authHeader);
+  console.log('Extracted Token (before cleanup):', token ? `${token.substring(0, 20)}...` : 'No token');
 
   if (!token) {
     return res.status(401).json({
@@ -45,14 +49,21 @@ export function authenticateToken(req, res, next) {
     });
   }
 
+  // Remove quotes if present (common mistake when copying from JSON)
+  token = token.replace(/^["']|["']$/g, '');
+  console.log('Cleaned Token:', token ? `${token.substring(0, 20)}...` : 'No token');
+
   try {
     const decoded = verifyJWT(token);
+    console.log('Token decoded successfully for user ID:', decoded.id);
     req.user = decoded;
     next();
   } catch (error) {
+    console.error('JWT verification error:', error.message);
     return res.status(403).json({
       success: false,
-      message: 'Invalid or expired token'
+      message: 'Invalid or expired token',
+      debug: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 }

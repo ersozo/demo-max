@@ -18,4 +18,7 @@ router.get('/', authenticateToken, userController.getAllUsers);
 // GET /users/profile - Get current user profile
 router.get('/profile', authenticateToken, userController.getCurrentUser);
 
+// GET /users/test-token - Test if JWT token is working (debug endpoint)
+router.get('/test-token', authenticateToken, userController.testToken);
+
 export default router; 

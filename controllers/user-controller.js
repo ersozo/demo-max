@@ -174,6 +174,27 @@ const userController = {
         message: 'Internal server error'
       });
     }
+  },
+
+  // Test token validity (debug endpoint)
+  async testToken(req, res) {
+    try {
+      res.status(200).json({
+        success: true,
+        message: 'Token is valid!',
+        tokenData: {
+          userId: req.user.id,
+          email: req.user.email,
+          iat: new Date(req.user.iat * 1000).toISOString(),
+          exp: new Date(req.user.exp * 1000).toISOString()
+        }
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        message: 'Error testing token'
+      });
+    }
   }
 };
 
