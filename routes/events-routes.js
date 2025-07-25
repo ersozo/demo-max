@@ -25,4 +25,17 @@ router.put('/:id', eventsController.updateEvent);
 // DELETE /events/:id - Delete event
 router.delete('/:id', eventsController.deleteEvent);
 
+// Event registration routes
+// POST /events/:id/register - Register for an event
+router.post('/:id/register', eventsController.registerForEvent);
+
+// DELETE /events/:id/unregister - Unregister from an event  
+router.delete('/:id/unregister', eventsController.unregisterFromEvent);
+
+// GET /events/:id/registrations - Get event registrations (only for event owner)
+router.get('/:id/registrations', eventsController.getEventRegistrations);
+
+// GET /events/registrations/my - Get current user's registered events
+router.get('/registrations/my', eventsController.getUserRegistrations);
+
 export default router; 

@@ -18,6 +18,38 @@ const updateEventStmt = db.prepare(`
 `);
 const deleteEventStmt = db.prepare('DELETE FROM events WHERE id = ? AND user_id = ?');
 
+// Registration prepared statements
+const registerForEventStmt = db.prepare(`
+  INSERT INTO event_registrations (event_id, user_id) 
+  VALUES (?, ?)
+`);
+const unregisterFromEventStmt = db.prepare(`
+  DELETE FROM event_registrations 
+  WHERE event_id = ? AND user_id = ?
+`);
+const findRegistrationStmt = db.prepare(`
+  SELECT * FROM event_registrations 
+  WHERE event_id = ? AND user_id = ?
+`);
+const getEventRegistrationsStmt = db.prepare(`
+  SELECT er.*, u.email, u.name 
+  FROM event_registrations er
+  JOIN users u ON er.user_id = u.id
+  WHERE er.event_id = ?
+  ORDER BY er.registered_at ASC
+`);
+const getUserRegistrationsStmt = db.prepare(`
+  SELECT e.*, er.registered_at, u.email as owner_email, u.name as owner_name
+  FROM event_registrations er
+  JOIN events e ON er.event_id = e.id
+  JOIN users u ON e.user_id = u.id
+  WHERE er.user_id = ?
+  ORDER BY e.date ASC
+`);
+const getRegistrationCountStmt = db.prepare(`
+  SELECT COUNT(*) as count FROM event_registrations WHERE event_id = ?
+`);
+
 // Events model functions
 const eventsModel = {
   // Get all events
@@ -69,9 +101,19 @@ const eventsModel = {
     }
   },
 
-  // Update event
+  // Update event (only by owner)
   updateEvent(id, userId, updateData) {
     try {
+      // First check if event exists and belongs to user
+      const existingEvent = this.findById(id);
+      if (!existingEvent) {
+        return { error: 'EVENT_NOT_FOUND', message: 'Event not found' };
+      }
+      
+      if (existingEvent.user_id !== userId) {
+        return { error: 'UNAUTHORIZED', message: 'You can only update your own events' };
+      }
+
       const result = updateEventStmt.run(
         updateData.title || null,
         updateData.description || null,
@@ -82,23 +124,162 @@ const eventsModel = {
       );
       
       if (result.changes === 0) {
-        return null; // No event found with that ID for this user
+        return { error: 'UPDATE_FAILED', message: 'Failed to update event' };
       }
       
-      return this.findById(id);
+      return { success: true, event: this.findById(id) };
     } catch (error) {
       console.error('Error updating event:', error);
       throw error;
     }
   },
 
-  // Delete event
+  // Delete event (only by owner)
   deleteEvent(id, userId) {
     try {
+      // First check if event exists and belongs to user
+      const existingEvent = this.findById(id);
+      if (!existingEvent) {
+        return { error: 'EVENT_NOT_FOUND', message: 'Event not found' };
+      }
+      
+      if (existingEvent.user_id !== userId) {
+        return { error: 'UNAUTHORIZED', message: 'You can only delete your own events' };
+      }
+
       const result = deleteEventStmt.run(id, userId);
-      return result.changes > 0;
+      
+      if (result.changes === 0) {
+        return { error: 'DELETE_FAILED', message: 'Failed to delete event' };
+      }
+      
+      return { success: true, message: 'Event deleted successfully' };
     } catch (error) {
       console.error('Error deleting event:', error);
+      throw error;
+    }
+  },
+
+  // Register for event
+  registerForEvent(eventId, userId) {
+    try {
+      // Check if event exists
+      const event = this.findById(eventId);
+      if (!event) {
+        return { error: 'EVENT_NOT_FOUND', message: 'Event not found' };
+      }
+
+      // Check if user is trying to register for their own event
+      if (event.user_id === userId) {
+        return { error: 'SELF_REGISTRATION', message: 'You cannot register for your own event' };
+      }
+
+      // Check if already registered
+      const existingRegistration = findRegistrationStmt.get(eventId, userId);
+      if (existingRegistration) {
+        return { error: 'ALREADY_REGISTERED', message: 'You are already registered for this event' };
+      }
+
+      // Check if event date has passed
+      const eventDate = new Date(event.date);
+      const now = new Date();
+      if (eventDate <= now) {
+        return { error: 'EVENT_PAST', message: 'Cannot register for past events' };
+      }
+
+      // Register for event
+      const result = registerForEventStmt.run(eventId, userId);
+      
+      if (result.changes === 0) {
+        return { error: 'REGISTRATION_FAILED', message: 'Failed to register for event' };
+      }
+
+      return { 
+        success: true, 
+        message: 'Successfully registered for event',
+        registration: {
+          id: result.lastInsertRowid,
+          event_id: eventId,
+          user_id: userId,
+          registered_at: new Date().toISOString()
+        }
+      };
+    } catch (error) {
+      if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+        return { error: 'ALREADY_REGISTERED', message: 'You are already registered for this event' };
+      }
+      console.error('Error registering for event:', error);
+      throw error;
+    }
+  },
+
+  // Unregister from event
+  unregisterFromEvent(eventId, userId) {
+    try {
+      // Check if event exists
+      const event = this.findById(eventId);
+      if (!event) {
+        return { error: 'EVENT_NOT_FOUND', message: 'Event not found' };
+      }
+
+      // Check if user is registered
+      const existingRegistration = findRegistrationStmt.get(eventId, userId);
+      if (!existingRegistration) {
+        return { error: 'NOT_REGISTERED', message: 'You are not registered for this event' };
+      }
+
+      // Unregister from event
+      const result = unregisterFromEventStmt.run(eventId, userId);
+      
+      if (result.changes === 0) {
+        return { error: 'UNREGISTER_FAILED', message: 'Failed to unregister from event' };
+      }
+
+      return { success: true, message: 'Successfully unregistered from event' };
+    } catch (error) {
+      console.error('Error unregistering from event:', error);
+      throw error;
+    }
+  },
+
+  // Get event registrations (for event owners)
+  getEventRegistrations(eventId) {
+    try {
+      return getEventRegistrationsStmt.all(eventId);
+    } catch (error) {
+      console.error('Error getting event registrations:', error);
+      throw error;
+    }
+  },
+
+  // Get user's registered events
+  getUserRegistrations(userId) {
+    try {
+      return getUserRegistrationsStmt.all(userId);
+    } catch (error) {
+      console.error('Error getting user registrations:', error);
+      throw error;
+    }
+  },
+
+  // Get registration count for an event
+  getRegistrationCount(eventId) {
+    try {
+      const result = getRegistrationCountStmt.get(eventId);
+      return result.count;
+    } catch (error) {
+      console.error('Error getting registration count:', error);
+      throw error;
+    }
+  },
+
+  // Check if user is registered for event
+  isUserRegistered(eventId, userId) {
+    try {
+      const registration = findRegistrationStmt.get(eventId, userId);
+      return !!registration;
+    } catch (error) {
+      console.error('Error checking registration status:', error);
       throw error;
     }
   }

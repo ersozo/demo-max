@@ -87,11 +87,13 @@ const validateEventData = (eventData) => {
 };
 
 const eventsController = {
-  // Create new event
+  // Create new event (user ownership automatically assigned)
   async createEvent(req, res) {
     try {
       const { title, description, address, date } = req.body;
-      const userId = req.user.id; // From JWT middleware
+      const userId = req.user.id; // From JWT middleware - this ensures ownership
+
+      console.log(`User ${userId} (${req.user.email}) creating new event: "${title}"`);
 
       // Comprehensive validation
       const validationErrors = validateEventData({ title, description, address, date });
@@ -110,7 +112,7 @@ const eventsController = {
         description: description ? sanitizeText(description) : null,
         address: address ? sanitizeText(address) : null,
         date: new Date(date).toISOString(), // Normalize date format
-        user_id: userId
+        user_id: userId // OWNERSHIP: Event belongs to authenticated user
       };
 
       // Check for duplicate events (same title, date, and user)
@@ -127,13 +129,16 @@ const eventsController = {
         });
       }
 
-      // Create new event
+      // Create new event with automatic ownership assignment
       const newEvent = eventsModel.createEvent(sanitizedEventData);
 
       res.status(201).json({
         success: true,
         message: 'Event created successfully',
-        event: newEvent
+        event: {
+          ...newEvent,
+          owner: req.user.email // Show who owns this event
+        }
       });
 
     } catch (error) {
@@ -298,20 +303,39 @@ const eventsController = {
          });
        }
 
-       const updatedEvent = eventsModel.updateEvent(eventId, userId, updateData);
+              console.log(`User ${userId} (${req.user.email}) attempting to update event ${eventId}`);
 
-      if (!updatedEvent) {
-        return res.status(404).json({
-          success: false,
-          message: 'Event not found or you do not have permission to update it'
-        });
-      }
+       const result = eventsModel.updateEvent(eventId, userId, updateData);
 
-      res.status(200).json({
-        success: true,
-        message: 'Event updated successfully',
-        event: updatedEvent
-      });
+       // Handle different error types
+       if (result.error) {
+         if (result.error === 'EVENT_NOT_FOUND') {
+           return res.status(404).json({
+             success: false,
+             message: result.message
+           });
+         }
+         
+         if (result.error === 'UNAUTHORIZED') {
+           return res.status(403).json({
+             success: false,
+             message: result.message
+           });
+         }
+         
+         return res.status(400).json({
+           success: false,
+           message: result.message
+         });
+       }
+
+       console.log(`Event ${eventId} successfully updated by user ${userId}`);
+
+       res.status(200).json({
+         success: true,
+         message: 'Event updated successfully',
+         event: result.event
+       });
 
     } catch (error) {
       console.error('Update event error:', error);
@@ -335,22 +359,232 @@ const eventsController = {
         });
       }
 
-      const deleted = eventsModel.deleteEvent(eventId, userId);
+             console.log(`User ${userId} (${req.user.email}) attempting to delete event ${eventId}`);
 
-      if (!deleted) {
-        return res.status(404).json({
-          success: false,
-          message: 'Event not found or you do not have permission to delete it'
-        });
-      }
+       const result = eventsModel.deleteEvent(eventId, userId);
 
-      res.status(200).json({
+       // Handle different error types
+       if (result.error) {
+         if (result.error === 'EVENT_NOT_FOUND') {
+           return res.status(404).json({
+             success: false,
+             message: result.message
+           });
+         }
+         
+         if (result.error === 'UNAUTHORIZED') {
+           return res.status(403).json({
+             success: false,
+             message: 'You can only delete events you created'
+           });
+         }
+         
+         return res.status(400).json({
+           success: false,
+           message: result.message
+         });
+       }
+
+       console.log(`Event ${eventId} successfully deleted by user ${userId}`);
+
+             res.status(200).json({
         success: true,
-        message: 'Event deleted successfully'
+        message: result.message
       });
 
     } catch (error) {
       console.error('Delete event error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error'
+      });
+    }
+  },
+
+  // Register for event
+  async registerForEvent(req, res) {
+    try {
+      const eventId = parseInt(req.params.id);
+      const userId = req.user.id;
+
+      if (isNaN(eventId)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid event ID'
+        });
+      }
+
+      console.log(`User ${userId} (${req.user.email}) attempting to register for event ${eventId}`);
+
+      const result = eventsModel.registerForEvent(eventId, userId);
+
+      // Handle different error types
+      if (result.error) {
+        const statusCodes = {
+          'EVENT_NOT_FOUND': 404,
+          'SELF_REGISTRATION': 400,
+          'ALREADY_REGISTERED': 409,
+          'EVENT_PAST': 400
+        };
+
+        return res.status(statusCodes[result.error] || 400).json({
+          success: false,
+          message: result.message
+        });
+      }
+
+      console.log(`User ${userId} successfully registered for event ${eventId}`);
+
+      res.status(201).json({
+        success: true,
+        message: result.message,
+        registration: result.registration
+      });
+
+    } catch (error) {
+      console.error('Register for event error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error'
+      });
+    }
+  },
+
+  // Unregister from event
+  async unregisterFromEvent(req, res) {
+    try {
+      const eventId = parseInt(req.params.id);
+      const userId = req.user.id;
+
+      if (isNaN(eventId)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid event ID'
+        });
+      }
+
+      console.log(`User ${userId} (${req.user.email}) attempting to unregister from event ${eventId}`);
+
+      const result = eventsModel.unregisterFromEvent(eventId, userId);
+
+      // Handle different error types
+      if (result.error) {
+        const statusCodes = {
+          'EVENT_NOT_FOUND': 404,
+          'NOT_REGISTERED': 400
+        };
+
+        return res.status(statusCodes[result.error] || 400).json({
+          success: false,
+          message: result.message
+        });
+      }
+
+      console.log(`User ${userId} successfully unregistered from event ${eventId}`);
+
+      res.status(200).json({
+        success: true,
+        message: result.message
+      });
+
+    } catch (error) {
+      console.error('Unregister from event error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error'
+      });
+    }
+  },
+
+  // Get event registrations (only for event owner)
+  async getEventRegistrations(req, res) {
+    try {
+      const eventId = parseInt(req.params.id);
+      const userId = req.user.id;
+
+      if (isNaN(eventId)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid event ID'
+        });
+      }
+
+      // Check if event exists and user owns it
+      const event = eventsModel.findById(eventId);
+      if (!event) {
+        return res.status(404).json({
+          success: false,
+          message: 'Event not found'
+        });
+      }
+
+      if (event.user_id !== userId) {
+        return res.status(403).json({
+          success: false,
+          message: 'You can only view registrations for your own events'
+        });
+      }
+
+      const registrations = eventsModel.getEventRegistrations(eventId);
+      const registrationCount = eventsModel.getRegistrationCount(eventId);
+
+      res.status(200).json({
+        success: true,
+        event: {
+          id: event.id,
+          title: event.title,
+          date: event.date
+        },
+        registrationCount,
+        registrations: registrations.map(reg => ({
+          id: reg.id,
+          user: {
+            id: reg.user_id,
+            email: reg.email,
+            name: reg.name
+          },
+          registered_at: reg.registered_at
+        }))
+      });
+
+    } catch (error) {
+      console.error('Get event registrations error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error'
+      });
+    }
+  },
+
+  // Get user's registered events
+  async getUserRegistrations(req, res) {
+    try {
+      const userId = req.user.id;
+      
+      const registrations = eventsModel.getUserRegistrations(userId);
+
+      res.status(200).json({
+        success: true,
+        message: 'Your registered events',
+        registrations: registrations.map(reg => ({
+          registration_id: reg.id,
+          registered_at: reg.registered_at,
+          event: {
+            id: reg.id,
+            title: reg.title,
+            description: reg.description,
+            address: reg.address,
+            date: reg.date,
+            owner: {
+              email: reg.owner_email,
+              name: reg.owner_name
+            }
+          }
+        }))
+      });
+
+    } catch (error) {
+      console.error('Get user registrations error:', error);
       res.status(500).json({
         success: false,
         message: 'Internal server error'

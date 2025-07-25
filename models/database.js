@@ -37,10 +37,24 @@ const createEventsTable = db.prepare(`
   )
 `);
 
+// Create event registrations table if it doesn't exist
+const createRegistrationsTable = db.prepare(`
+  CREATE TABLE IF NOT EXISTS event_registrations (
+    id INTEGER PRIMARY KEY,
+    event_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    registered_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (event_id) REFERENCES events (id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+    UNIQUE(event_id, user_id)
+  )
+`);
+
 // Initialize database
 try {
   createUsersTable.run();
   createEventsTable.run();
+  createRegistrationsTable.run();
   console.log('Database initialized successfully');
 } catch (error) {
   console.error('Error initializing database:', error);
