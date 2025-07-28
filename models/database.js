@@ -31,6 +31,7 @@ const createEventsTable = db.prepare(`
     description TEXT,
     address TEXT,
     date DATETIME NOT NULL,
+    image_url TEXT,
     user_id INTEGER NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
@@ -50,11 +51,34 @@ const createRegistrationsTable = db.prepare(`
   )
 `);
 
+// Database migration function to add image_url column if it doesn't exist
+const migrateDatabase = () => {
+  try {
+    // Check if image_url column exists in events table
+    const tableInfo = db.prepare("PRAGMA table_info(events)").all();
+    const imageUrlColumnExists = tableInfo.some(column => column.name === 'image_url');
+    
+    if (!imageUrlColumnExists) {
+      console.log('Adding image_url column to events table...');
+      db.prepare("ALTER TABLE events ADD COLUMN image_url TEXT").run();
+      console.log('Successfully added image_url column to events table');
+    }
+  } catch (error) {
+    // If table doesn't exist yet, this will fail silently
+    // and the table will be created with the full schema below
+    console.log('Migration skipped - events table will be created with full schema');
+  }
+};
+
 // Initialize database
 try {
   createUsersTable.run();
   createEventsTable.run();
   createRegistrationsTable.run();
+  
+  // Run migration for existing databases
+  migrateDatabase();
+  
   console.log('Database initialized successfully');
 } catch (error) {
   console.error('Error initializing database:', error);

@@ -5,15 +5,16 @@ const getAllEventsStmt = db.prepare('SELECT * FROM events ORDER BY date ASC');
 const findEventByIdStmt = db.prepare('SELECT * FROM events WHERE id = ?');
 const findEventsByUserIdStmt = db.prepare('SELECT * FROM events WHERE user_id = ? ORDER BY date ASC');
 const createEventStmt = db.prepare(`
-  INSERT INTO events (title, description, address, date, user_id) 
-  VALUES (?, ?, ?, ?, ?)
+  INSERT INTO events (title, description, address, date, image_url, user_id) 
+  VALUES (?, ?, ?, ?, ?, ?)
 `);
 const updateEventStmt = db.prepare(`
   UPDATE events 
   SET title = COALESCE(?, title), 
       description = COALESCE(?, description), 
       address = COALESCE(?, address),
-      date = COALESCE(?, date)
+      date = COALESCE(?, date),
+      image_url = COALESCE(?, image_url)
   WHERE id = ? AND user_id = ?
 `);
 const deleteEventStmt = db.prepare('DELETE FROM events WHERE id = ? AND user_id = ?');
@@ -90,6 +91,7 @@ const eventsModel = {
         eventData.description || null,
         eventData.address || null,
         eventData.date,
+        eventData.image_url || null,
         eventData.user_id
       );
       
@@ -119,6 +121,7 @@ const eventsModel = {
         updateData.description || null,
         updateData.address || null,
         updateData.date || null,
+        updateData.image_url || null,
         id,
         userId
       );

@@ -1,4 +1,5 @@
 import eventsModel from '../models/events-model.js';
+import { deleteUploadedFile } from '../util/upload.js';
 
 // Helper function to validate date format
 const isValidDate = (dateString) => {
@@ -92,13 +93,22 @@ const eventsController = {
     try {
       const { title, description, address, date } = req.body;
       const userId = req.user.id; // From JWT middleware - this ensures ownership
+      const uploadedFile = req.file; // From multer middleware
 
       console.log(`User ${userId} (${req.user.email}) creating new event: "${title}"`);
+      if (uploadedFile) {
+        console.log(`Image uploaded: ${uploadedFile.filename}`);
+      }
 
       // Comprehensive validation
       const validationErrors = validateEventData({ title, description, address, date });
       
       if (validationErrors.length > 0) {
+        // Delete uploaded file if validation fails
+        if (uploadedFile) {
+          deleteUploadedFile(uploadedFile.filename);
+        }
+        
         return res.status(400).json({
           success: false,
           message: 'Validation failed',
@@ -106,12 +116,16 @@ const eventsController = {
         });
       }
 
+      // Generate image URL if file was uploaded
+      const imageUrl = uploadedFile ? `/images/${uploadedFile.filename}` : null;
+
       // Sanitize inputs
       const sanitizedEventData = {
         title: sanitizeText(title),
         description: description ? sanitizeText(description) : null,
         address: address ? sanitizeText(address) : null,
         date: new Date(date).toISOString(), // Normalize date format
+        image_url: imageUrl,
         user_id: userId // OWNERSHIP: Event belongs to authenticated user
       };
 
@@ -123,6 +137,11 @@ const eventsController = {
       );
 
       if (duplicateEvent) {
+        // Delete uploaded file if duplicate found
+        if (uploadedFile) {
+          deleteUploadedFile(uploadedFile.filename);
+        }
+        
         return res.status(409).json({
           success: false,
           message: 'You already have an event with the same title at the same date and time'
@@ -143,6 +162,11 @@ const eventsController = {
 
     } catch (error) {
       console.error('Create event error:', error);
+      
+      // Delete uploaded file if error occurs
+      if (req.file) {
+        deleteUploadedFile(req.file.filename);
+      }
       
       // Handle specific database errors
       if (error.code === 'SQLITE_CONSTRAINT_FOREIGNKEY') {
@@ -247,7 +271,32 @@ const eventsController = {
         });
       }
 
-             // Validate only provided fields
+             // Get current event to check for existing image
+       const currentEvent = eventsModel.findById(eventId);
+       if (!currentEvent) {
+         // Delete uploaded file if event not found
+         if (req.file) {
+           deleteUploadedFile(req.file.filename);
+         }
+         return res.status(404).json({
+           success: false,
+           message: 'Event not found'
+         });
+       }
+
+       // Check ownership
+       if (currentEvent.user_id !== userId) {
+         // Delete uploaded file if not authorized
+         if (req.file) {
+           deleteUploadedFile(req.file.filename);
+         }
+         return res.status(403).json({
+           success: false,
+           message: 'You can only update your own events'
+         });
+       }
+
+       // Validate only provided fields
        const updateData = {};
        const validationErrors = [];
 
@@ -295,7 +344,22 @@ const eventsController = {
          }
        }
 
+       // Handle image upload
+       if (req.file) {
+         updateData.image_url = `/images/${req.file.filename}`;
+         
+         // Delete old image if it exists
+         if (currentEvent.image_url) {
+           const oldFilename = currentEvent.image_url.split('/').pop();
+           deleteUploadedFile(oldFilename);
+         }
+       }
+
        if (validationErrors.length > 0) {
+         // Delete uploaded file if validation fails
+         if (req.file) {
+           deleteUploadedFile(req.file.filename);
+         }
          return res.status(400).json({
            success: false,
            message: 'Validation failed',
@@ -359,9 +423,18 @@ const eventsController = {
         });
       }
 
-             console.log(`User ${userId} (${req.user.email}) attempting to delete event ${eventId}`);
+             // Get event to check for image before deletion
+       const eventToDelete = eventsModel.findById(eventId);
+
+       console.log(`User ${userId} (${req.user.email}) attempting to delete event ${eventId}`);
 
        const result = eventsModel.deleteEvent(eventId, userId);
+
+       // Delete image file if event was successfully deleted
+       if (result.success && eventToDelete && eventToDelete.image_url) {
+         const filename = eventToDelete.image_url.split('/').pop();
+         deleteUploadedFile(filename);
+       }
 
        // Handle different error types
        if (result.error) {
